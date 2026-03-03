@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import { tables, reducers } from './module_bindings';
 import type * as Types from './module_bindings/types';
@@ -12,7 +12,12 @@ export type PrettyMessage = {
   kind: 'system' | 'user';
 };
 
-function App() {
+type AppProps = {
+  oidcProfile?: { preferred_username?: string; name?: string; email?: string };
+  onSignOut?: () => void;
+};
+
+function App({ oidcProfile, onSignOut }: AppProps) {
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
   const [systemMessages, setSystemMessages] = useState([] as Types.Message[]);
@@ -58,6 +63,20 @@ function App() {
 
   const [offlineUsers] = useTable(tables.user.where(r => r.online.eq(false)));
   const users = [...onlineUsers, ...offlineUsers];
+
+  // Auto-set name from OIDC profile on first connect
+  const hasAutoSetName = useRef(false);
+  useEffect(() => {
+    if (!connected || !identity || !oidcProfile || hasAutoSetName.current) return;
+    const currentUser = users.find(u => u.identity.isEqual(identity));
+    if (currentUser && !currentUser.name) {
+      const profileName = oidcProfile.preferred_username || oidcProfile.name;
+      if (profileName) {
+        hasAutoSetName.current = true;
+        setName({ name: profileName });
+      }
+    }
+  }, [connected, identity, oidcProfile, users, setName]);
 
   const prettyMessages: PrettyMessage[] = messages
     .concat(systemMessages)
@@ -122,6 +141,11 @@ function App() {
             >
               Edit Name
             </button>
+            {onSignOut && (
+              <button onClick={onSignOut} style={{ marginLeft: '0.5rem' }}>
+                Sign Out
+              </button>
+            )}
           </>
         ) : (
           <form onSubmit={onSubmitNewName}>
