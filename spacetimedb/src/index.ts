@@ -32,15 +32,26 @@ export const set_name = spacetimedb.reducer(
     const user = ctx.db.user.identity.find(ctx.sender);
     if (!user) throw new SenderError('Cannot set name for unknown user');
 
-    // Check uniqueness: no other user should have this name
+    // Check uniqueness: no other user (with a different authId) should have this name
     for (const other of ctx.db.user.iter()) {
       if (other.name === name && !other.identity.isEqual(ctx.sender)) {
+        // Allow if same authId (same logical account on different device)
+        if (user.authId && other.authId === user.authId) continue;
         throw new SenderError('Name is already taken');
       }
     }
 
     console.info(`User ${ctx.sender} sets name to ${name}`);
     ctx.db.user.identity.update({ ...user, name });
+
+    // Sync name to all other identities sharing the same authId
+    if (user.authId) {
+      for (const other of ctx.db.user.iter()) {
+        if (other.authId === user.authId && !other.identity.isEqual(ctx.sender)) {
+          ctx.db.user.identity.update({ ...other, name });
+        }
+      }
+    }
   }
 );
 
@@ -53,30 +64,19 @@ export const link_account = spacetimedb.reducer(
     // Already linked with this authId — no-op
     if (currentUser.authId === authId) return;
 
-    // Check if another user already has this authId (same account, different device)
-    let oldUser;
+    // Find an existing sibling with this authId to copy name from
+    let siblingName: string | undefined;
     for (const u of ctx.db.user.iter()) {
       if (u.authId === authId && !u.identity.isEqual(ctx.sender)) {
-        oldUser = u;
+        siblingName = u.name;
         break;
       }
     }
 
-    if (oldUser) {
-      // Merge: transfer old user's name to current user
-      const mergedName = oldUser.name || currentUser.name;
-
-      // Delete the old user row
-      ctx.db.user.identity.delete(oldUser.identity);
-
-      // Update current user with authId and merged name
-      ctx.db.user.identity.update({ ...currentUser, authId, name: mergedName });
-      console.info(`Merged user ${oldUser.identity} into ${ctx.sender} via authId ${authId}`);
-    } else {
-      // No existing user with this authId — just set it
-      ctx.db.user.identity.update({ ...currentUser, authId });
-      console.info(`Linked authId ${authId} to user ${ctx.sender}`);
-    }
+    // Set authId and inherit name from sibling (if any)
+    const mergedName = siblingName || currentUser.name;
+    ctx.db.user.identity.update({ ...currentUser, authId, name: mergedName });
+    console.info(`Linked authId ${authId} to user ${ctx.sender}${siblingName ? ` (inherited name: ${siblingName})` : ''}`);
   }
 );
 

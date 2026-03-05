@@ -64,31 +64,47 @@ function App({ oidcProfile, onSignOut }: AppProps) {
   );
 
   const [offlineUsers] = useTable(tables.user.where(r => r.online.eq(false)));
-  const users = [...onlineUsers, ...offlineUsers];
+  const allUsers = [...onlineUsers, ...offlineUsers];
+
+  // Deduplicate users by authId for display (multiple identities = same person)
+  const dedupeUsers = (userList: typeof onlineUsers) => {
+    const seen = new Set<string>();
+    return userList.filter(u => {
+      if (u.authId) {
+        if (seen.has(u.authId)) return false;
+        seen.add(u.authId);
+      }
+      return true;
+    });
+  };
+  const uniqueOnlineUsers = dedupeUsers(onlineUsers);
+  const uniqueOfflineUsers = dedupeUsers(offlineUsers).filter(
+    u => !u.authId || !onlineUsers.some(o => o.authId === u.authId)
+  );
 
   // Link account via OIDC sub claim on first connect
   const hasLinkedAccount = useRef(false);
   useEffect(() => {
     if (!connected || !identity || !oidcProfile?.sub || hasLinkedAccount.current) return;
-    const currentUser = users.find(u => u.identity.isEqual(identity));
+    const currentUser = allUsers.find(u => u.identity.isEqual(identity));
     if (currentUser) {
       hasLinkedAccount.current = true;
       linkAccount({ authId: oidcProfile.sub });
     }
-  }, [connected, identity, oidcProfile, users, linkAccount]);
+  }, [connected, identity, oidcProfile, allUsers, linkAccount]);
 
   // Auto-set name from OIDC profile on first connect (after linking)
   const hasAutoSetName = useRef(false);
   useEffect(() => {
     if (!connected || !identity || !oidcProfile || hasAutoSetName.current) return;
     if (!hasLinkedAccount.current) return; // Wait for linking first
-    const currentUser = users.find(u => u.identity.isEqual(identity));
+    const currentUser = allUsers.find(u => u.identity.isEqual(identity));
     if (currentUser && !currentUser.name) {
       const profileName = oidcProfile.preferred_username || oidcProfile.name;
       if (profileName) {
         hasAutoSetName.current = true;
         // Try the name, then fallback with number suffixes if taken
-        const existingNames = new Set(users.map(u => u.name).filter(Boolean));
+        const existingNames = new Set(allUsers.map(u => u.name).filter(Boolean));
         let candidateName = profileName;
         let suffix = 1;
         while (existingNames.has(candidateName)) {
@@ -98,17 +114,27 @@ function App({ oidcProfile, onSignOut }: AppProps) {
         setName({ name: candidateName });
       }
     }
-  }, [connected, identity, oidcProfile, users, setName]);
+  }, [connected, identity, oidcProfile, allUsers, setName]);
+
+  // Resolve a sender identity to a display name (checking authId siblings)
+  const resolveUserName = (senderHex: string): string | undefined => {
+    const user = allUsers.find(u => u.identity.toHexString() === senderHex);
+    if (user?.name) return user.name;
+    // If this identity has an authId, find a sibling with a name
+    if (user?.authId) {
+      const sibling = allUsers.find(u => u.authId === user.authId && u.name);
+      if (sibling?.name) return sibling.name;
+    }
+    return undefined;
+  };
 
   const prettyMessages: PrettyMessage[] = messages
     .concat(systemMessages)
     .sort((a, b) => (a.sent.toDate() > b.sent.toDate() ? 1 : -1))
     .map(message => {
-      const user = users.find(
-        u => u.identity.toHexString() === message.sender.toHexString()
-      );
+      const senderHex = message.sender.toHexString();
       return {
-        senderName: user?.name || message.sender.toHexString().substring(0, 8),
+        senderName: resolveUserName(senderHex) || senderHex.substring(0, 8),
         text: message.text,
         sent: message.sent,
         kind: Identity.zero().isEqual(message.sender) ? 'system' : 'user',
@@ -126,8 +152,8 @@ function App({ oidcProfile, onSignOut }: AppProps) {
   }
 
   const name = (() => {
-    const user = users.find(u => u.identity.isEqual(identity));
-    return user?.name || identity?.toHexString().substring(0, 8) || '';
+    const identityHex = identity?.toHexString();
+    return (identityHex && resolveUserName(identityHex)) || identityHex?.substring(0, 8) || '';
   })();
 
   const onSubmitNewName = (e: React.FormEvent<HTMLFormElement>) => {
@@ -243,16 +269,16 @@ function App({ oidcProfile, onSignOut }: AppProps) {
       <div className="online" style={{ whiteSpace: 'pre-wrap' }}>
         <h1>Online</h1>
         <div>
-          {onlineUsers.map((user, key) => (
+          {uniqueOnlineUsers.map((user, key) => (
             <div key={key}>
               <p>{user.name || user.identity.toHexString().substring(0, 8)}</p>
             </div>
           ))}
         </div>
-        {offlineUsers.length > 0 && (
+        {uniqueOfflineUsers.length > 0 && (
           <div>
             <h1>Offline</h1>
-            {offlineUsers.map((user, key) => (
+            {uniqueOfflineUsers.map((user, key) => (
               <div key={key}>
                 <p>
                   {user.name || user.identity.toHexString().substring(0, 8)}

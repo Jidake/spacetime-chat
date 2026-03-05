@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:spacetimedb.com)"
+      "WebFetch(domain:spacetimedb.com)",
+      "Bash(npx tsc:*)"
     ]
   }
 }
