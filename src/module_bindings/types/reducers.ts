@@ -6,9 +6,11 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import LinkAccountReducer from "../link_account_reducer";
 import SendMessageReducer from "../send_message_reducer";
 import SetNameReducer from "../set_name_reducer";
 
+export type LinkAccountParams = __Infer<typeof LinkAccountReducer>;
 export type SendMessageParams = __Infer<typeof SendMessageReducer>;
 export type SetNameParams = __Infer<typeof SetNameReducer>;
 

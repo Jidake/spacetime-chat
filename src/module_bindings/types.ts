@@ -20,6 +20,7 @@ export type Message = __Infer<typeof Message>;
 export const User = __t.object("User", {
   identity: __t.identity(),
   name: __t.option(__t.string()),
+  authId: __t.option(__t.string()),
   online: __t.bool(),
 });
 export type User = __Infer<typeof User>;

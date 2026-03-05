@@ -13,19 +13,21 @@ export type PrettyMessage = {
 };
 
 type AppProps = {
-  oidcProfile?: { preferred_username?: string; name?: string; email?: string };
+  oidcProfile?: { preferred_username?: string; name?: string; email?: string; sub?: string };
   onSignOut?: () => void;
 };
 
 function App({ oidcProfile, onSignOut }: AppProps) {
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
+  const [nameError, setNameError] = useState('');
   const [systemMessages, setSystemMessages] = useState([] as Types.Message[]);
   const [newMessage, setNewMessage] = useState('');
 
   const { identity, isActive: connected } = useSpacetimeDB();
   const setName = useReducer(reducers.setName);
   const sendMessage = useReducer(reducers.sendMessage);
+  const linkAccount = useReducer(reducers.linkAccount);
 
   // Subscribe to all messages in the chat
   const [messages] = useTable(tables.message);
@@ -64,16 +66,36 @@ function App({ oidcProfile, onSignOut }: AppProps) {
   const [offlineUsers] = useTable(tables.user.where(r => r.online.eq(false)));
   const users = [...onlineUsers, ...offlineUsers];
 
-  // Auto-set name from OIDC profile on first connect
+  // Link account via OIDC sub claim on first connect
+  const hasLinkedAccount = useRef(false);
+  useEffect(() => {
+    if (!connected || !identity || !oidcProfile?.sub || hasLinkedAccount.current) return;
+    const currentUser = users.find(u => u.identity.isEqual(identity));
+    if (currentUser) {
+      hasLinkedAccount.current = true;
+      linkAccount({ authId: oidcProfile.sub });
+    }
+  }, [connected, identity, oidcProfile, users, linkAccount]);
+
+  // Auto-set name from OIDC profile on first connect (after linking)
   const hasAutoSetName = useRef(false);
   useEffect(() => {
     if (!connected || !identity || !oidcProfile || hasAutoSetName.current) return;
+    if (!hasLinkedAccount.current) return; // Wait for linking first
     const currentUser = users.find(u => u.identity.isEqual(identity));
     if (currentUser && !currentUser.name) {
       const profileName = oidcProfile.preferred_username || oidcProfile.name;
       if (profileName) {
         hasAutoSetName.current = true;
-        setName({ name: profileName });
+        // Try the name, then fallback with number suffixes if taken
+        const existingNames = new Set(users.map(u => u.name).filter(Boolean));
+        let candidateName = profileName;
+        let suffix = 1;
+        while (existingNames.has(candidateName)) {
+          candidateName = `${profileName}${suffix}`;
+          suffix++;
+        }
+        setName({ name: candidateName });
       }
     }
   }, [connected, identity, oidcProfile, users, setName]);
@@ -110,8 +132,14 @@ function App({ oidcProfile, onSignOut }: AppProps) {
 
   const onSubmitNewName = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setSettingName(false);
-    setName({ name: newName });
+    setNameError('');
+    setName({ name: newName })
+      .then(() => {
+        setSettingName(false);
+      })
+      .catch((err: Error) => {
+        setNameError(err.message?.includes('already taken') ? 'Name is already taken' : err.message);
+      });
   };
 
   const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
@@ -156,6 +184,7 @@ function App({ oidcProfile, onSignOut }: AppProps) {
               onChange={e => setNewName(e.target.value)}
             />
             <button type="submit">Submit</button>
+            {nameError && <p style={{ color: 'red', marginTop: '0.25rem' }}>{nameError}</p>}
           </form>
         )}
       </div>

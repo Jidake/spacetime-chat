@@ -4,10 +4,15 @@
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 
 const user = table(
-  { name: 'user', public: true },
+  {
+    name: 'user',
+    public: true,
+    indexes: [{ name: 'user_auth_id', algorithm: 'btree', columns: ['authId'] }],
+  },
   {
     identity: t.identity().primaryKey(),
     name: t.string().optional(),
+    authId: t.string().optional(),
     online: t.bool(),
   }
 );
@@ -30,8 +35,47 @@ export const set_name = spacetimedb.reducer(
     validateName(name);
     const user = ctx.db.user.identity.find(ctx.sender);
     if (!user) throw new SenderError('Cannot set name for unknown user');
+
+    // Check uniqueness: no other user should have this name
+    for (const other of ctx.db.user.iter()) {
+      if (other.name === name && !other.identity.isEqual(ctx.sender)) {
+        throw new SenderError('Name is already taken');
+      }
+    }
+
     console.info(`User ${ctx.sender} sets name to ${name}`);
     ctx.db.user.identity.update({ ...user, name });
+  }
+);
+
+export const link_account = spacetimedb.reducer(
+  { authId: t.string() },
+  (ctx, { authId }) => {
+    const currentUser = ctx.db.user.identity.find(ctx.sender);
+    if (!currentUser) throw new SenderError('Unknown user');
+
+    // Already linked with this authId — no-op
+    if (currentUser.authId === authId) return;
+
+    // Check if another user already has this authId (same account, different device)
+    const existingUsers = [...ctx.db.user.user_auth_id.filter(authId)];
+    const oldUser = existingUsers.find(u => !u.identity.isEqual(ctx.sender));
+
+    if (oldUser) {
+      // Merge: transfer old user's name to current user
+      const mergedName = oldUser.name || currentUser.name;
+
+      // Delete the old user row
+      ctx.db.user.identity.delete(oldUser.identity);
+
+      // Update current user with authId and merged name
+      ctx.db.user.identity.update({ ...currentUser, authId, name: mergedName });
+      console.info(`Merged user ${oldUser.identity} into ${ctx.sender} via authId ${authId}`);
+    } else {
+      // No existing user with this authId — just set it
+      ctx.db.user.identity.update({ ...currentUser, authId });
+      console.info(`Linked authId ${authId} to user ${ctx.sender}`);
+    }
   }
 );
 
