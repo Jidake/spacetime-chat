@@ -139,6 +139,23 @@ function App({ oidcProfile, onSignOut }: AppProps) {
     return undefined;
   };
 
+  // Auto-scroll: track whether user is at bottom of chat
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+
+  const handleScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+  };
+
+  useEffect(() => {
+    if (isAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  });
+
   const prettyMessages: PrettyMessage[] = messages
     .concat(systemMessages)
     .sort((a, b) => (a.sent.toDate() > b.sent.toDate() ? 1 : -1))
@@ -228,7 +245,7 @@ function App({ oidcProfile, onSignOut }: AppProps) {
       <div className="message-panel">
         <h1>Messages</h1>
         {prettyMessages.length < 1 && <p>No messages</p>}
-        <div className="messages">
+        <div className="messages" ref={messagesContainerRef} onScroll={handleScroll}>
           {prettyMessages.map((message, key) => {
             const sentDate = message.sent.toDate();
             const now = new Date();
@@ -275,6 +292,7 @@ function App({ oidcProfile, onSignOut }: AppProps) {
               </div>
             );
           })}
+          <div ref={messagesEndRef} />
         </div>
       </div>
       <div className="online" style={{ whiteSpace: 'pre-wrap' }}>
@@ -314,6 +332,14 @@ function App({ oidcProfile, onSignOut }: AppProps) {
             aria-label="message input"
             value={newMessage}
             onChange={e => setNewMessage(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (newMessage.trim()) {
+                  onSubmitMessage(e as unknown as React.FormEvent<HTMLFormElement>);
+                }
+              }
+            }}
           ></textarea>
           <button type="submit">Send</button>
         </form>
