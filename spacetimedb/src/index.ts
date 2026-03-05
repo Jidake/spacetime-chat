@@ -4,11 +4,7 @@
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 
 const user = table(
-  {
-    name: 'user',
-    public: true,
-    indexes: [{ name: 'user_auth_id', algorithm: 'btree', columns: ['authId'] }],
-  },
+  { name: 'user', public: true },
   {
     identity: t.identity().primaryKey(),
     name: t.string().optional(),
@@ -58,8 +54,13 @@ export const link_account = spacetimedb.reducer(
     if (currentUser.authId === authId) return;
 
     // Check if another user already has this authId (same account, different device)
-    const existingUsers = [...ctx.db.user.user_auth_id.filter(authId)];
-    const oldUser = existingUsers.find(u => !u.identity.isEqual(ctx.sender));
+    let oldUser;
+    for (const u of ctx.db.user.iter()) {
+      if (u.authId === authId && !u.identity.isEqual(ctx.sender)) {
+        oldUser = u;
+        break;
+      }
+    }
 
     if (oldUser) {
       // Merge: transfer old user's name to current user
