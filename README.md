@@ -1,6 +1,6 @@
 # Jidake Chat
 
-chat.jidake.com
+https://chat.jidake.com
 
 When all else fails...
 
