@@ -1,5 +1,7 @@
 # Jidake Chat
 
+chat.jidake.com
+
 When all else fails...
 
 React + Vite + SpacetimeDB
