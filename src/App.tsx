@@ -99,20 +99,31 @@ function App({ oidcProfile, onSignOut }: AppProps) {
     if (!connected || !identity || !oidcProfile || hasAutoSetName.current) return;
     if (!hasLinkedAccount.current) return; // Wait for linking first
     const currentUser = allUsers.find(u => u.identity.isEqual(identity));
-    if (currentUser && !currentUser.name) {
-      const profileName = oidcProfile.preferred_username || oidcProfile.name;
-      if (profileName) {
-        hasAutoSetName.current = true;
-        // Try the name, then fallback with number suffixes if taken
-        const existingNames = new Set(allUsers.map(u => u.name).filter(Boolean));
-        let candidateName = profileName;
-        let suffix = 1;
-        while (existingNames.has(candidateName)) {
-          candidateName = `${profileName}${suffix}`;
-          suffix++;
-        }
-        setName({ name: candidateName });
+    if (!currentUser) return;
+
+    // Skip if this user already has a name (set directly or inherited via link_account)
+    if (currentUser.name) {
+      hasAutoSetName.current = true;
+      return;
+    }
+
+    // Skip if a sibling identity already has a name (link_account will copy it)
+    if (currentUser.authId && allUsers.some(u => u.authId === currentUser.authId && u.name)) {
+      return; // Wait for link_account to propagate the name
+    }
+
+    const profileName = oidcProfile.preferred_username || oidcProfile.name;
+    if (profileName) {
+      hasAutoSetName.current = true;
+      // Try the name, then fallback with number suffixes if taken
+      const existingNames = new Set(allUsers.map(u => u.name).filter(Boolean));
+      let candidateName = profileName;
+      let suffix = 1;
+      while (existingNames.has(candidateName)) {
+        candidateName = `${profileName}${suffix}`;
+        suffix++;
       }
+      setName({ name: candidateName });
     }
   }, [connected, identity, oidcProfile, allUsers, setName]);
 
