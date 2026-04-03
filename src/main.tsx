@@ -1,4 +1,4 @@
-import { StrictMode, useMemo } from 'react';
+import { StrictMode, useEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
@@ -43,6 +43,15 @@ function AuthGate() {
     []
   );
 
+  // When silent renew fails, clear the error and re-trigger login
+  // instead of showing a dead-end error screen
+  useEffect(() => {
+    if (auth.error) {
+      console.warn('Auth error, re-triggering login:', auth.error.message);
+      auth.removeUser().then(() => auth.signinRedirect());
+    }
+  }, [auth.error]);
+
   if (auth.isLoading) {
     return (
       <div className="App">
@@ -54,9 +63,7 @@ function AuthGate() {
   if (auth.error) {
     return (
       <div className="App">
-        <h1>Authentication Error</h1>
-        <p>{auth.error.message}</p>
-        <button onClick={() => auth.signinRedirect()}>Try Again</button>
+        <h1>Reconnecting...</h1>
       </div>
     );
   }

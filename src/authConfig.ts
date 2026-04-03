@@ -6,4 +6,8 @@ export const oidcConfig = {
   scope: 'openid profile email',
   response_type: 'code',
   automaticSilentRenew: true,
+  // Clean up auth params from URL after redirect to prevent stale state on refresh
+  onSigninCallback: () => {
+    window.history.replaceState({}, document.title, window.location.pathname);
+  },
 };
